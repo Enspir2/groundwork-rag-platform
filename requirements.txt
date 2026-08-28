@@ -1,0 +1,14 @@
+# Core (Phase 0-1, already usable)
+python-dotenv==1.0.1
+
+# AI providers (Phase 2 — embeddings & LLM)
+anthropic==0.39.0
+voyageai==0.3.1
+
+# Retrieval (Phase 3)
+rank-bm25==0.2.2
+numpy==1.26.4
+
+# We'll add fastapi, uvicorn, sqlalchemy/pgvector etc. in later phases —
+# deliberately NOT adding them now so the requirements file reflects what
+# we've actually built, not what we plan to build eventually.
