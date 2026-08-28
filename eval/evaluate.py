@@ -1,7 +1,7 @@
 """
-Evaluation harness: runs both retrieval strategies against the benchmark and
-computes recall@k, precision@k, and MRR for each — so "is hybrid better?" has
-an actual measured answer instead of an eyeballed one.
+Evaluation harness: runs three retrieval strategies against the benchmark and
+computes recall@k, precision@k, and MRR for each — so "does hybrid help? does
+reranking help?" have actual measured answers instead of eyeballed ones.
 
 Run from the eval/ directory: python evaluate.py
 """
@@ -13,8 +13,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from chunking import chunk_directory
 from hybrid_retrieval import vector_rank, bm25_rank, reciprocal_rank_fusion
+from reranking import rerank
 
 TOP_K = 5
+RERANK_CANDIDATE_POOL = 15  # retrieve this many via hybrid before reranking down to TOP_K
 
 
 def load_benchmark() -> list[dict]:
@@ -46,50 +48,63 @@ def reciprocal_rank(ranking: list[str], relevant: set[str]) -> float:
     return 0.0
 
 
-def evaluate_both_strategies(questions: list[dict], chunks) -> tuple[dict, dict]:
+def _pack(name, questions, recalls, precisions, rrs):
+    n = len(questions)
+    return {
+        "strategy": name,
+        "recall_at_5": sum(recalls) / n,
+        "precision_at_5": sum(precisions) / n,
+        "mrr": sum(rrs) / n,
+        "per_question": [
+            {"id": q["id"], "recall": r, "precision": p, "rr": rr}
+            for q, r, p, rr in zip(questions, recalls, precisions, rrs)
+        ],
+    }
+
+
+def evaluate_all_strategies(questions: list[dict], chunks) -> tuple[dict, dict, dict]:
     """
-    Computes vector_rank ONCE per question and reuses it for both the vector-only
-    strategy and as an input to the hybrid strategy's RRF fusion. This halves the
-    number of embed_query API calls compared to calling vector_rank and a separate
-    hybrid_rank independently — which matters under a 3 requests/minute free-tier limit.
+    Computes vector_rank and bm25_rank ONCE per question and reuses them across
+    all three strategies (vector-only, hybrid, hybrid+reranked) — avoiding
+    redundant embed_query API calls, which matters under free-tier rate limits.
     """
-    vector_recalls, vector_precisions, vector_rrs = [], [], []
-    hybrid_recalls, hybrid_precisions, hybrid_rrs = [], [], []
+    v_recalls, v_precisions, v_rrs = [], [], []
+    h_recalls, h_precisions, h_rrs = [], [], []
+    r_recalls, r_precisions, r_rrs = [], [], []
+
+    chunk_by_id = {c.chunk_id: c for c in chunks}
 
     for q in questions:
         relevant = set(q["relevant_chunk_ids"])
         query = q["question"]
 
-        vec_ranking = vector_rank(query, chunks)          # 1 embed_query call (cached after first run)
-        bm25_ranking = bm25_rank(query, chunks)            # no API call at all
+        vec_ranking = vector_rank(query, chunks)
+        bm25_ranking = bm25_rank(query, chunks)
         fused = reciprocal_rank_fusion([bm25_ranking, vec_ranking])
         hybrid_ranking = [cid for cid, _ in fused]
 
-        vector_recalls.append(recall_at_k(vec_ranking, relevant, TOP_K))
-        vector_precisions.append(precision_at_k(vec_ranking, relevant, TOP_K))
-        vector_rrs.append(reciprocal_rank(vec_ranking, relevant))
+        # Reranking stage: take a WIDER candidate pool from hybrid, then rerank down to TOP_K
+        candidate_ids = hybrid_ranking[:RERANK_CANDIDATE_POOL]
+        candidates = [chunk_by_id[cid] for cid in candidate_ids]
+        reranked = rerank(query, candidates, top_k=TOP_K)
+        reranked_ranking = [c.chunk_id for c, _ in reranked]
 
-        hybrid_recalls.append(recall_at_k(hybrid_ranking, relevant, TOP_K))
-        hybrid_precisions.append(precision_at_k(hybrid_ranking, relevant, TOP_K))
-        hybrid_rrs.append(reciprocal_rank(hybrid_ranking, relevant))
+        v_recalls.append(recall_at_k(vec_ranking, relevant, TOP_K))
+        v_precisions.append(precision_at_k(vec_ranking, relevant, TOP_K))
+        v_rrs.append(reciprocal_rank(vec_ranking, relevant))
 
-    n = len(questions)
+        h_recalls.append(recall_at_k(hybrid_ranking, relevant, TOP_K))
+        h_precisions.append(precision_at_k(hybrid_ranking, relevant, TOP_K))
+        h_rrs.append(reciprocal_rank(hybrid_ranking, relevant))
 
-    def _pack(name, recalls, precisions, rrs):
-        return {
-            "strategy": name,
-            "recall_at_5": sum(recalls) / n,
-            "precision_at_5": sum(precisions) / n,
-            "mrr": sum(rrs) / n,
-            "per_question": [
-                {"id": q["id"], "recall": r, "precision": p, "rr": rr}
-                for q, r, p, rr in zip(questions, recalls, precisions, rrs)
-            ],
-        }
+        r_recalls.append(recall_at_k(reranked_ranking, relevant, TOP_K))
+        r_precisions.append(precision_at_k(reranked_ranking, relevant, TOP_K))
+        r_rrs.append(reciprocal_rank(reranked_ranking, relevant))
 
     return (
-        _pack("vector-only", vector_recalls, vector_precisions, vector_rrs),
-        _pack("hybrid (BM25+vector via RRF)", hybrid_recalls, hybrid_precisions, hybrid_rrs),
+        _pack("vector-only", questions, v_recalls, v_precisions, v_rrs),
+        _pack("hybrid (BM25+vector via RRF)", questions, h_recalls, h_precisions, h_rrs),
+        _pack("hybrid + reranked", questions, r_recalls, r_precisions, r_rrs),
     )
 
 
@@ -100,26 +115,26 @@ if __name__ == "__main__":
     questions = load_benchmark()
 
     print(f"Running evaluation on {len(questions)} benchmark questions, top_k={TOP_K}")
-    print("(First run will be slow due to free-tier rate limits on new queries — subsequent")
-    print(" runs reuse the query cache and are near-instant.)\n")
+    print("(Reranking calls the API fresh each time — no caching for rerank calls yet —")
+    print(" so this run will make real API calls and may hit rate limits. That's expected.)\n")
 
-    vector_results, hybrid_results = evaluate_both_strategies(questions, chunks)
+    vector_results, hybrid_results, reranked_results = evaluate_all_strategies(questions, chunks)
 
     print(f"{'Strategy':<30} {'Recall@5':>10} {'Precision@5':>13} {'MRR':>8}")
     print("-" * 65)
-    for r in [vector_results, hybrid_results]:
+    for r in [vector_results, hybrid_results, reranked_results]:
         print(f"{r['strategy']:<30} {r['recall_at_5']:>10.3f} {r['precision_at_5']:>13.3f} {r['mrr']:>8.3f}")
 
-    print("\nPer-question breakdown (recall@5): vector-only vs hybrid")
+    print("\nPer-question recall@5: vector | hybrid | hybrid+reranked")
     print("-" * 65)
-    for vq, hq in zip(vector_results["per_question"], hybrid_results["per_question"]):
-        marker = ""
-        if vq["recall"] != hq["recall"]:
-            marker = "  <-- DIFFERS"
-        print(f"{vq['id']:<6} vector={vq['recall']:.2f}  hybrid={hq['recall']:.2f}{marker}")
+    for vq, hq, rq in zip(vector_results["per_question"], hybrid_results["per_question"], reranked_results["per_question"]):
+        marker = "  <-- DIFFERS" if len({vq["recall"], hq["recall"], rq["recall"]}) > 1 else ""
+        print(f"{vq['id']:<6} vector={vq['recall']:.2f}  hybrid={hq['recall']:.2f}  reranked={rq['recall']:.2f}{marker}")
 
-    # Save full results for the README / future comparisons
     out_path = os.path.join(here, "results.json")
     with open(out_path, "w") as f:
-        json.dump({"vector_only": vector_results, "hybrid": hybrid_results}, f, indent=2)
+        json.dump(
+            {"vector_only": vector_results, "hybrid": hybrid_results, "hybrid_reranked": reranked_results},
+            f, indent=2,
+        )
     print(f"\nFull results saved to {out_path}")
