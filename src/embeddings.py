@@ -75,7 +75,7 @@ def embed_chunks(chunks: list[Chunk]) -> dict[str, list[float]]:
         # input_type="document" tells Voyage this is indexed content, not a live query —
         # Voyage's models are trained to treat queries and documents asymmetrically for
         # better retrieval quality.
-        result = client.embed(texts, model=EMBED_MODEL, input_type="document")
+        result = _embed_with_retry(client, texts, input_type="document")
         for chunk, vec in zip(to_embed, result.embeddings):
             vectors[chunk.chunk_id] = vec
         _save_cache({"model": EMBED_MODEL, "vectors": vectors})
@@ -85,10 +85,52 @@ def embed_chunks(chunks: list[Chunk]) -> dict[str, list[float]]:
     return {c.chunk_id: vectors[c.chunk_id] for c in chunks}
 
 
+def _query_cache_key(query: str) -> str:
+    import hashlib
+    return hashlib.md5(f"{EMBED_MODEL}:{query}".encode()).hexdigest()
+
+
 def embed_query(query: str) -> list[float]:
+    """
+    Cached + rate-limit-aware. Voyage's free tier (no payment method attached)
+    allows only 3 requests/minute — without caching and throttling, evaluating
+    12+ benchmark questions in a loop blows through that limit immediately.
+    """
+    cache = _load_cache()
+    query_cache = cache.setdefault("queries", {})
+    key = _query_cache_key(query)
+
+    if key in query_cache:
+        return query_cache[key]
+
     client = _get_client()
-    result = client.embed([query], model=EMBED_MODEL, input_type="query")
-    return result.embeddings[0]
+    result = _embed_with_retry(client, [query], input_type="query")
+    vec = result.embeddings[0]
+
+    query_cache[key] = vec
+    _save_cache(cache)
+    return vec
+
+
+def _embed_with_retry(client, texts: list[str], input_type: str, max_retries: int = 5):
+    """
+    Handles Voyage's free-tier rate limit (3 RPM without a payment method) with
+    exponential backoff. Without this, a batch of queries fails outright instead
+    of just slowing down — and a real production system would need the same kind
+    of resilience against any third-party API's rate limits, not just in dev.
+    """
+    import time
+    for attempt in range(max_retries):
+        try:
+            return client.embed(texts, model=EMBED_MODEL, input_type=input_type)
+        except Exception as e:
+            if "RateLimitError" in type(e).__name__ or "rate limit" in str(e).lower():
+                wait = 21 * (attempt + 1)  # free tier resets roughly every 20s for 3 RPM
+                print(f"  [rate limited] waiting {wait}s before retry ({attempt + 1}/{max_retries})...")
+                time.sleep(wait)
+            else:
+                raise
+    raise RuntimeError("Exceeded max retries due to rate limiting.")
 
 
 def cosine_similarity(a: list[float], b: list[float]) -> float:

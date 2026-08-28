@@ -1,0 +1,90 @@
+{
+  "_readme": "Hand-written benchmark. Each question lists the chunk_id(s) considered 'relevant' (gold). Written by inspecting the actual source documents, independent of what any retrieval method currently returns, to reduce bias toward the system's existing behavior.",
+  "questions": [
+    {
+      "id": "q1",
+      "question": "Why did European revenue decline in Q2?",
+      "relevant_chunk_ids": ["b6529315bb46", "e2439f03234a", "bcf88da6fffa"],
+      "category": "cross-document reasoning",
+      "difficulty": "hard",
+      "note": "Requires both the finance report's summary of causes AND the product doc's specifics on the recall to fully answer."
+    },
+    {
+      "id": "q2",
+      "question": "What was Nimbus Retail's total global revenue in Q1?",
+      "relevant_chunk_ids": ["e61b22ac3f61"],
+      "category": "single-fact lookup",
+      "difficulty": "easy"
+    },
+    {
+      "id": "q3",
+      "question": "How much did Europe's revenue change quarter over quarter in Q2?",
+      "relevant_chunk_ids": ["341b41ff3ad7"],
+      "category": "single-fact lookup",
+      "difficulty": "easy"
+    },
+    {
+      "id": "q4",
+      "question": "What caused the Electronics product recall in May?",
+      "relevant_chunk_ids": ["e2439f03234a"],
+      "category": "single-fact lookup",
+      "difficulty": "medium"
+    },
+    {
+      "id": "q5",
+      "question": "How many units were affected by the Electronics recall and which regions?",
+      "relevant_chunk_ids": ["bcf88da6fffa"],
+      "category": "single-fact lookup",
+      "difficulty": "medium"
+    },
+    {
+      "id": "q6",
+      "question": "How many days of paid annual leave do employees get?",
+      "relevant_chunk_ids": ["d86dffac0bf2"],
+      "category": "single-fact lookup",
+      "difficulty": "easy"
+    },
+    {
+      "id": "q7",
+      "question": "What is the company's policy on sharing employee salary information?",
+      "relevant_chunk_ids": ["e5a7730dadbd"],
+      "category": "single-fact lookup",
+      "difficulty": "easy"
+    },
+    {
+      "id": "q8",
+      "question": "Did India's revenue grow or shrink between Q1 and Q2?",
+      "relevant_chunk_ids": ["84a39e2306c0", "341b41ff3ad7"],
+      "category": "cross-document comparison",
+      "difficulty": "medium"
+    },
+    {
+      "id": "q9",
+      "question": "What does leadership expect for Europe's recovery timeline?",
+      "relevant_chunk_ids": ["d062f2456777"],
+      "category": "single-fact lookup",
+      "difficulty": "medium"
+    },
+    {
+      "id": "q10",
+      "question": "Why did growth in Europe slow down even before Q2, back in Q1?",
+      "relevant_chunk_ids": ["a8dd6eac6707"],
+      "category": "single-fact lookup",
+      "difficulty": "medium"
+    },
+    {
+      "id": "q11",
+      "question": "What is the maternity leave policy?",
+      "relevant_chunk_ids": ["4aeb201a4426"],
+      "category": "single-fact lookup",
+      "difficulty": "easy"
+    },
+    {
+      "id": "q12",
+      "question": "What was the financial cost of the Electronics recall?",
+      "relevant_chunk_ids": ["52149f809b18"],
+      "category": "single-fact lookup",
+      "difficulty": "medium"
+    }
+  ]
+}
