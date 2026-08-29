@@ -10,6 +10,9 @@ google-genai
 rank-bm25
 numpy
 
+# UI (Phase 11)
+streamlit
+
 # Version pins removed for now — Python 3.14 is very new, and some libraries
 # (numpy 1.26.4 specifically) don't have prebuilt wheels for it yet, which
 # forces pip to compile from source and fail without a C compiler installed.
