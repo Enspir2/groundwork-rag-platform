@@ -67,9 +67,9 @@ python3 data/build_revenue_db.py
 - [x] Query decomposition — evaluated, **not adopted** (see Evaluation Results below)
 - [x] Controlled SQL tool (LLM-generated SQL, validated, read-only execution)
 - [x] Grounded answer synthesis (Claude, citation-enforced, empty-evidence guard)
-- [ ] Query routing (SQL vs retrieval vs both)
+- [x] Query routing (SQL vs retrieval vs both, combined into one grounded answer)
+- [x] Permission-aware retrieval — wired into the router, filtering happens before retrieval
 - [ ] Simple UI (Streamlit)
-- [ ] Permission-aware retrieval — Python-side filtering complete; not wired into an API layer
 
 ## Evaluation results
 
