@@ -98,7 +98,20 @@ def chunk_text(
 
 
 def chunk_directory(dir_path: str) -> List[Chunk]:
-    """Load every .md file in a directory and chunk it."""
+    """Load every .md file in a directory and chunk it, tagging each chunk with
+    which roles are allowed to see it, based on its source document."""
+    # Permission mapping: which roles can see which documents. "all" means
+    # every authenticated user, regardless of role, can see it.
+    # This mapping is the single source of truth for document sensitivity —
+    # centralizing it here (rather than scattering role checks elsewhere) is
+    # what makes it hard to accidentally forget to protect a new document.
+    DOC_PERMISSIONS = {
+        "finance_q1_report": ["finance", "manager"],
+        "finance_q2_report": ["finance", "manager"],
+        "hr_policy_leave": ["hr", "manager"],
+        "product_electronics_recall": ["all"],
+    }
+
     all_chunks: List[Chunk] = []
     for fname in sorted(os.listdir(dir_path)):
         if not fname.endswith(".md"):
@@ -106,11 +119,29 @@ def chunk_directory(dir_path: str) -> List[Chunk]:
         fpath = os.path.join(dir_path, fname)
         with open(fpath, "r", encoding="utf-8") as f:
             text = f.read()
-        # Use first line (the H1 heading) as doc title
         title_line = text.strip().split("\n")[0].lstrip("# ").strip()
         doc_id = fname.replace(".md", "")
-        all_chunks.extend(chunk_text(text, doc_id=doc_id, doc_title=title_line))
+        allowed_roles = DOC_PERMISSIONS.get(doc_id, ["all"])  # default: visible to all if untagged
+
+        chunks = chunk_text(text, doc_id=doc_id, doc_title=title_line)
+        for c in chunks:
+            c.metadata["allowed_roles"] = allowed_roles
+        all_chunks.extend(chunks)
     return all_chunks
+
+
+def filter_chunks_by_role(chunks: List[Chunk], user_role: str) -> List[Chunk]:
+    """
+    Returns only chunks the given role is authorized to see. This MUST be called
+    before any ranking/retrieval happens — never rank first and filter after
+    (see Phase 8 notes: filtering after ranking means restricted content gets
+    scored/processed on behalf of an unauthorized request, which is the actual
+    security violation, independent of whether the content is later hidden).
+    """
+    return [
+        c for c in chunks
+        if "all" in c.metadata.get("allowed_roles", ["all"]) or user_role in c.metadata.get("allowed_roles", [])
+    ]
 
 
 if __name__ == "__main__":
