@@ -23,9 +23,11 @@ from google.genai import types
 
 load_dotenv()
 
-MODEL = "gemini-3.6-flash"  # free-tier model name as of Aug 2026 — Google retires/renames
-                             # these periodically; if this 404s again, check
-                             # https://aistudio.google.com for the current free-tier model list
+MODEL = "gemini-flash-lite-latest"  # using the "latest" alias rather than a pinned
+                                     # version, after hitting two retired/nonexistent
+                                     # pinned names in a row. Tradeoff: never 404s from
+                                     # renaming, but behavior can shift silently when
+                                     # the provider updates what "latest" points to.
 
 _client = None
 
@@ -100,7 +102,16 @@ def decompose_query(question: str, max_retries: int = 3) -> list[str]:
             print(f"  [decompose] Failed to parse JSON, falling back to original question. Raw: {raw_text!r}")
             return [question]
         except Exception as e:
-            if "rate" in str(e).lower() or "quota" in str(e).lower() or "429" in str(e):
+            error_str = str(e)
+            if "PerDay" in error_str or "generaterequestsperdayperproject" in error_str.lower():
+                # Daily quota exhausted — retrying won't help until it resets. Fail clearly
+                # instead of wasting time on a retry loop that can't possibly succeed.
+                raise RuntimeError(
+                    f"Gemini daily free-tier quota exhausted for model '{MODEL}'. "
+                    "This resets roughly every 24 hours. Consider switching MODEL to a "
+                    "different free-tier model in the meantime, or wait and retry tomorrow."
+                ) from e
+            elif "rate" in error_str.lower() or "quota" in error_str.lower() or "429" in error_str:
                 wait = 15 * (attempt + 1)
                 print(f"  [decompose] Rate limited, waiting {wait}s and retrying ({attempt + 1}/{max_retries})...")
                 time.sleep(wait)
