@@ -69,7 +69,17 @@ python3 data/build_revenue_db.py
 - [x] Grounded answer synthesis (Claude, citation-enforced, empty-evidence guard)
 - [x] Query routing (SQL vs retrieval vs both, combined into one grounded answer)
 - [x] Permission-aware retrieval — wired into the router, filtering happens before retrieval
-- [ ] Simple UI (Streamlit)
+- [x] Simple UI (Streamlit) — role selector, routed Q&A, source transparency
+
+## Demo
+
+*(Add a screenshot here — run `streamlit run src/app.py`, ask a question, screenshot the result and the expanded sources panel. This is worth doing before sharing the repo; a visible working demo is far more convincing than a feature list.)*
+
+To run the demo yourself:
+```bash
+cd src
+streamlit run app.py
+```
 
 ## Evaluation results
 
