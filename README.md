@@ -65,7 +65,7 @@ python3 data/build_revenue_db.py
 - [x] Reranking (Voyage cross-encoder)
 - [x] Evaluation framework (recall@5, precision@5, MRR on a 12-question hand-labeled benchmark)
 - [x] Query decomposition — evaluated, **not adopted** (see Evaluation Results below)
-- [ ] Controlled SQL tool
+- [x] Controlled SQL tool (LLM-generated SQL, validated, read-only execution)
 - [ ] Permission-aware retrieval
 
 ## Evaluation results
