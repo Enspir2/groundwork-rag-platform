@@ -1,5 +1,5 @@
 {
-  "vector_only": {
+  "vector-only": {
     "strategy": "vector-only",
     "recall_at_5": 0.9444444444444445,
     "precision_at_5": 0.21666666666666667,
@@ -79,7 +79,7 @@
       }
     ]
   },
-  "hybrid": {
+  "hybrid (BM25+vector via RRF)": {
     "strategy": "hybrid (BM25+vector via RRF)",
     "recall_at_5": 0.9027777777777778,
     "precision_at_5": 0.20000000000000004,
@@ -159,7 +159,7 @@
       }
     ]
   },
-  "hybrid_reranked": {
+  "hybrid + reranked": {
     "strategy": "hybrid + reranked",
     "recall_at_5": 0.9444444444444445,
     "precision_at_5": 0.21666666666666667,
@@ -224,6 +224,86 @@
         "recall": 1.0,
         "precision": 0.2,
         "rr": 1.0
+      },
+      {
+        "id": "q11",
+        "recall": 1.0,
+        "precision": 0.2,
+        "rr": 1.0
+      },
+      {
+        "id": "q12",
+        "recall": 1.0,
+        "precision": 0.2,
+        "rr": 1.0
+      }
+    ]
+  },
+  "hybrid + reranked + query planning": {
+    "strategy": "hybrid + reranked + query planning",
+    "recall_at_5": 0.9444444444444445,
+    "precision_at_5": 0.21666666666666667,
+    "mrr": 0.7916666666666666,
+    "per_question": [
+      {
+        "id": "q1",
+        "recall": 0.3333333333333333,
+        "precision": 0.2,
+        "rr": 1.0
+      },
+      {
+        "id": "q2",
+        "recall": 1.0,
+        "precision": 0.2,
+        "rr": 1.0
+      },
+      {
+        "id": "q3",
+        "recall": 1.0,
+        "precision": 0.2,
+        "rr": 0.25
+      },
+      {
+        "id": "q4",
+        "recall": 1.0,
+        "precision": 0.2,
+        "rr": 0.25
+      },
+      {
+        "id": "q5",
+        "recall": 1.0,
+        "precision": 0.2,
+        "rr": 1.0
+      },
+      {
+        "id": "q6",
+        "recall": 1.0,
+        "precision": 0.2,
+        "rr": 1.0
+      },
+      {
+        "id": "q7",
+        "recall": 1.0,
+        "precision": 0.2,
+        "rr": 1.0
+      },
+      {
+        "id": "q8",
+        "recall": 1.0,
+        "precision": 0.4,
+        "rr": 0.5
+      },
+      {
+        "id": "q9",
+        "recall": 1.0,
+        "precision": 0.2,
+        "rr": 1.0
+      },
+      {
+        "id": "q10",
+        "recall": 1.0,
+        "precision": 0.2,
+        "rr": 0.5
       },
       {
         "id": "q11",

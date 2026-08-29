@@ -1,7 +1,8 @@
 """
-Evaluation harness: runs three retrieval strategies against the benchmark and
-computes recall@k, precision@k, and MRR for each — so "does hybrid help? does
-reranking help?" have actual measured answers instead of eyeballed ones.
+Evaluation harness: runs four retrieval strategies against the benchmark and
+computes recall@k, precision@k, and MRR for each — vector-only, hybrid, hybrid+reranked,
+and hybrid+reranked+query-decomposition — so every architectural addition has a
+measured, honest answer to "did this actually help?"
 
 Run from the eval/ directory: python evaluate.py
 """
@@ -14,9 +15,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from chunking import chunk_directory
 from hybrid_retrieval import vector_rank, bm25_rank, reciprocal_rank_fusion
 from reranking import rerank
+from query_planning import multi_query_retrieve
 
 TOP_K = 5
-RERANK_CANDIDATE_POOL = 15  # retrieve this many via hybrid before reranking down to TOP_K
+RERANK_CANDIDATE_POOL = 15
 
 
 def load_benchmark() -> list[dict]:
@@ -62,49 +64,49 @@ def _pack(name, questions, recalls, precisions, rrs):
     }
 
 
-def evaluate_all_strategies(questions: list[dict], chunks) -> tuple[dict, dict, dict]:
-    """
-    Computes vector_rank and bm25_rank ONCE per question and reuses them across
-    all three strategies (vector-only, hybrid, hybrid+reranked) — avoiding
-    redundant embed_query API calls, which matters under free-tier rate limits.
-    """
-    v_recalls, v_precisions, v_rrs = [], [], []
-    h_recalls, h_precisions, h_rrs = [], [], []
-    r_recalls, r_precisions, r_rrs = [], [], []
+def evaluate_all_strategies(questions: list[dict], chunks) -> tuple[dict, dict, dict, dict]:
+    metrics = {name: {"recall": [], "precision": [], "rr": []}
+               for name in ["vector", "hybrid", "reranked", "planned"]}
 
     chunk_by_id = {c.chunk_id: c for c in chunks}
 
     for q in questions:
         relevant = set(q["relevant_chunk_ids"])
         query = q["question"]
+        print(f"  Evaluating {q['id']}...")
 
         vec_ranking = vector_rank(query, chunks)
         bm25_ranking = bm25_rank(query, chunks)
         fused = reciprocal_rank_fusion([bm25_ranking, vec_ranking])
         hybrid_ranking = [cid for cid, _ in fused]
 
-        # Reranking stage: take a WIDER candidate pool from hybrid, then rerank down to TOP_K
         candidate_ids = hybrid_ranking[:RERANK_CANDIDATE_POOL]
         candidates = [chunk_by_id[cid] for cid in candidate_ids]
         reranked = rerank(query, candidates, top_k=TOP_K)
         reranked_ranking = [c.chunk_id for c, _ in reranked]
 
-        v_recalls.append(recall_at_k(vec_ranking, relevant, TOP_K))
-        v_precisions.append(precision_at_k(vec_ranking, relevant, TOP_K))
-        v_rrs.append(reciprocal_rank(vec_ranking, relevant))
+        planned_results = multi_query_retrieve(query, chunks, top_k=TOP_K)
+        planned_ranking = [c.chunk_id for c, _ in planned_results]
 
-        h_recalls.append(recall_at_k(hybrid_ranking, relevant, TOP_K))
-        h_precisions.append(precision_at_k(hybrid_ranking, relevant, TOP_K))
-        h_rrs.append(reciprocal_rank(hybrid_ranking, relevant))
+        for name, ranking in [
+            ("vector", vec_ranking),
+            ("hybrid", hybrid_ranking),
+            ("reranked", reranked_ranking),
+            ("planned", planned_ranking),
+        ]:
+            metrics[name]["recall"].append(recall_at_k(ranking, relevant, TOP_K))
+            metrics[name]["precision"].append(precision_at_k(ranking, relevant, TOP_K))
+            metrics[name]["rr"].append(reciprocal_rank(ranking, relevant))
 
-        r_recalls.append(recall_at_k(reranked_ranking, relevant, TOP_K))
-        r_precisions.append(precision_at_k(reranked_ranking, relevant, TOP_K))
-        r_rrs.append(reciprocal_rank(reranked_ranking, relevant))
-
-    return (
-        _pack("vector-only", questions, v_recalls, v_precisions, v_rrs),
-        _pack("hybrid (BM25+vector via RRF)", questions, h_recalls, h_precisions, h_rrs),
-        _pack("hybrid + reranked", questions, r_recalls, r_precisions, r_rrs),
+    names = {
+        "vector": "vector-only",
+        "hybrid": "hybrid (BM25+vector via RRF)",
+        "reranked": "hybrid + reranked",
+        "planned": "hybrid + reranked + query planning",
+    }
+    return tuple(
+        _pack(names[key], questions, metrics[key]["recall"], metrics[key]["precision"], metrics[key]["rr"])
+        for key in ["vector", "hybrid", "reranked", "planned"]
     )
 
 
@@ -115,26 +117,27 @@ if __name__ == "__main__":
     questions = load_benchmark()
 
     print(f"Running evaluation on {len(questions)} benchmark questions, top_k={TOP_K}")
-    print("(Reranking calls the API fresh each time — no caching for rerank calls yet —")
-    print(" so this run will make real API calls and may hit rate limits. That's expected.)\n")
+    print("(Query planning adds Gemini calls per question plus extra rerank calls per")
+    print(" sub-question — this run will be slower and may hit rate limits. Expected.)\n")
 
-    vector_results, hybrid_results, reranked_results = evaluate_all_strategies(questions, chunks)
+    results = evaluate_all_strategies(questions, chunks)
 
-    print(f"{'Strategy':<30} {'Recall@5':>10} {'Precision@5':>13} {'MRR':>8}")
-    print("-" * 65)
-    for r in [vector_results, hybrid_results, reranked_results]:
-        print(f"{r['strategy']:<30} {r['recall_at_5']:>10.3f} {r['precision_at_5']:>13.3f} {r['mrr']:>8.3f}")
+    print(f"\n{'Strategy':<38} {'Recall@5':>10} {'Precision@5':>13} {'MRR':>8}")
+    print("-" * 75)
+    for r in results:
+        print(f"{r['strategy']:<38} {r['recall_at_5']:>10.3f} {r['precision_at_5']:>13.3f} {r['mrr']:>8.3f}")
 
-    print("\nPer-question recall@5: vector | hybrid | hybrid+reranked")
-    print("-" * 65)
-    for vq, hq, rq in zip(vector_results["per_question"], hybrid_results["per_question"], reranked_results["per_question"]):
-        marker = "  <-- DIFFERS" if len({vq["recall"], hq["recall"], rq["recall"]}) > 1 else ""
-        print(f"{vq['id']:<6} vector={vq['recall']:.2f}  hybrid={hq['recall']:.2f}  reranked={rq['recall']:.2f}{marker}")
+    print("\nPer-question recall@5:")
+    header = "  ".join(f"{r['strategy'].split()[0]:<10}" for r in results)
+    print(f"{'':<6} {header}")
+    print("-" * 75)
+    for i, q in enumerate(questions):
+        vals = [f"{r['per_question'][i]['recall']:<10.2f}" for r in results]
+        differs = len({r['per_question'][i]['recall'] for r in results}) > 1
+        marker = "  <-- DIFFERS" if differs else ""
+        print(f"{q['id']:<6} {'  '.join(vals)}{marker}")
 
     out_path = os.path.join(here, "results.json")
     with open(out_path, "w") as f:
-        json.dump(
-            {"vector_only": vector_results, "hybrid": hybrid_results, "hybrid_reranked": reranked_results},
-            f, indent=2,
-        )
+        json.dump({r["strategy"]: r for r in results}, f, indent=2)
     print(f"\nFull results saved to {out_path}")

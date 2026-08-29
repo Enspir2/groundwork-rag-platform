@@ -4,6 +4,7 @@ python-dotenv
 # AI providers (Phase 2 — embeddings & LLM)
 anthropic
 voyageai
+google-genai
 
 # Retrieval (Phase 3)
 rank-bm25
